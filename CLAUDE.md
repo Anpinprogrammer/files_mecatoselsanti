@@ -141,6 +141,7 @@ archivo vive cada número:
 | 60 | `ManagedStockModal.tsx` — ADMIN fija el stock exacto por sede (`$set`, `PUT /products/:id/stock`), distinto del top-up aditivo de `StockModal.tsx` (`$inc`) | `admin-frontend/CLAUDE.md` |
 | 61 | Método de pago CARD (Tarjeta/Datáfono) quitado de toda la UI — el negocio solo recibe Efectivo/Nequi/Delivery Apps; el enum del backend lo sigue aceptando por compatibilidad con ventas históricas | `admin-frontend/CLAUDE.md` |
 | 66 | Carga Masiva de inventario — matriz producto x sede (`BulkStockModal.tsx`), `$set` exacto sobre muchos productos a la vez vía `PUT /products/stock/bulk`, extensión multi-producto del punto 60 | `backend/CLAUDE.md` |
+| 67 | `dianWorker.ts` lleva un servidor HTTP mínimo (`GET /health`) para desplegarse como Web Service gratis de Render en vez de un Background Worker de pago — riesgo de suspensión por inactividad aceptado explícitamente | `backend/CLAUDE.md` |
 
 ## Stack
 
