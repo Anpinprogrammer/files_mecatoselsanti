@@ -108,7 +108,7 @@ archivo vive cada número:
 | 31 | Sin turno abierto: aviso, nunca atrapado | `admin-frontend/src/cajero/CLAUDE.md` |
 | 32 | Impresión térmica (`print-server/`) | `print-server/CLAUDE.md` |
 | 33 | Zona horaria de Colombia en todo el proyecto | *(este archivo)* |
-| 34 | Ventas DELIVERY_APP nacen `PENDING_PAYMENT` (CxC DiDi/Rappi) | `backend/CLAUDE.md` |
+| 34 | Ventas Rappi/DiDi (canal, no método de pago) nacen `PENDING_PAYMENT` bajo `BANCOLOMBIA` — reescrito, reemplaza el diseño por `paymentMethod` original | `backend/CLAUDE.md` |
 | 35 | Factura Electrónica Nominal también opcional para el cliente | `admin-frontend/src/cajero/CLAUDE.md` |
 | 36 | Responsividad del panel admin (Sidebar/Topbar drawer + Dashboard carruseles) | `admin-frontend/CLAUDE.md` |
 | 37 | `createSaleAdmin`: categoría SPECIAL/REGULAR por tope diario, gateada por `dianResponsible` | `backend/CLAUDE.md` |
@@ -140,6 +140,7 @@ archivo vive cada número:
 | 59 | Correo de bienvenida al crear ADMIN/MANAGER — reutiliza el link seguro de "olvidé mi contraseña" (`generateResetToken()`), nunca manda la contraseña en texto plano | `backend/CLAUDE.md` |
 | 60 | `ManagedStockModal.tsx` — ADMIN fija el stock exacto por sede (`$set`, `PUT /products/:id/stock`), distinto del top-up aditivo de `StockModal.tsx` (`$inc`) | `admin-frontend/CLAUDE.md` |
 | 61 | Método de pago CARD (Tarjeta/Datáfono) quitado de toda la UI — el negocio solo recibe Efectivo/Nequi/Delivery Apps; el enum del backend lo sigue aceptando por compatibilidad con ventas históricas | `admin-frontend/CLAUDE.md` |
+| 66 | Carga Masiva de inventario — matriz producto x sede (`BulkStockModal.tsx`), `$set` exacto sobre muchos productos a la vez vía `PUT /products/stock/bulk`, extensión multi-producto del punto 60 | `backend/CLAUDE.md` |
 
 ## Stack
 
@@ -391,7 +392,44 @@ repitas `new Date().toLocaleString(...)` sin `timeZone`, ni
 
 ## Pendiente conocido (no asumas que ya existe)
 
-- Integración real con PTA (Factus/Alegra/Siigo) — hoy es mock.
+- **Integración real con Siigo (PTA) — funcionando y ya probada contra la
+  cuenta de producción, `DIAN_PROVIDER=SIIGO` activo en este ambiente de
+  dev**: ver punto 10 en `backend/CLAUDE.md` para el detalle completo.
+  `dianService.ts` habla con la cuenta real de Siigo (`Partner-Id:
+  MecatosElSanti`), el mapeo por sede (`Branch.dianConfig.siigoSellerId`/
+  `siigoDocumentId`) y el catálogo de 44 productos reales (`Product.siigoCode`)
+  ya están cargados, y se confirmó contra facturas reales tanto la forma de
+  la respuesta (`cufe` en `stamp.cufe`, el link de factura/QR en
+  `public_url` — no `stamp.qr_code`) como que el timbrado es asíncrono
+  (`siigoEmit` reconsulta la factura hasta confirmar el CUFE antes de
+  darse por vencido, ver punto 10).
+  **⚠️ Ya se generaron facturas reales, timbradas ante la DIAN, durante
+  las pruebas** — algunas sin venta real detrás; anularlas requiere una
+  Nota Crédito en Siigo por cada una (una `Sale` cancelada/borrada en
+  Mongo no anula nada del lado de Siigo/DIAN). Antes de volver a probar
+  con `DIAN_PROVIDER=SIIGO`, considera si de verdad quieres generar otra
+  factura real — no hay ambiente sandbox separado con estas credenciales.
+  **Resuelto**: el mapeo de pago para ventas de delivery apps ya no
+  depende de `SIIGO_PAYMENT_ID_DELIVERY_APP` — el refactor del punto 34
+  (`Sale.paymentMethod` ahora incluye `EFECTIVO`/`BANCOLOMBIA`, ver ese
+  punto) mapea `BANCOLOMBIA` a `SIIGO_PAYMENT_ID_BANCOLOMBIA=105`
+  ("Transferencia Bancolombia", ya existía en el catálogo real, sin usar
+  hasta ahora). **Todavía pendiente**: mapeo de `SIIGO_PAYMENT_ID_CARD`
+  (sin id claro en el catálogo real de la cuenta — decisión de negocio, no
+  un olvido, e irrelevante en la práctica ya que `CARD` es legacy-only) y
+  un campo en `ProductModal.tsx` para editar `siigoCode` desde la UI (hoy
+  se edita directo en Mongo).
+  **⚠️ Deuda técnica nueva, a propósito**: `createBranch` defaultea
+  `dianConfig.siigoSellerId`/`siigoDocumentId` de toda sede nueva
+  `dianResponsible` al vendedor/documento de "Boulevard" (`1032`/`32502`)
+  en vez de exigir uno real por sede — sin esto, una sede nueva quedaba
+  sin poder emitir ninguna venta hasta configurarla a mano en
+  `DianConfig.tsx`. Efecto real: mientras el negocio solo opere una sede
+  `dianResponsible` de verdad esto no se nota, pero en cuanto abra una
+  segunda, ambas quedarían facturando ante la DIAN bajo el mismo
+  vendedor/resolución de Siigo hasta que alguien dé de alta uno real para
+  la sede nueva y lo actualice a mano en `DianConfig.tsx` (ver punto 10 en
+  `backend/CLAUDE.md` para el detalle completo).
 - Webhooks reales de Rappi/DiDi (Hubster/Deliverect) — no implementados.
 - KDS (Kitchen Display System) vía WebSockets — no implementado. La
   impresión térmica de recibos SÍ está implementada (ver punto 32 en
