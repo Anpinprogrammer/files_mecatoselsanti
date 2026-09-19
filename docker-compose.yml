@@ -1,0 +1,123 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      - mongo
+      - redis
+    ports:
+      - "4000:4000"
+    volumes:
+      - product_images:/app/uploads
+    environment:
+      PORT: 4000
+      NODE_ENV: production
+      # Red de seguridad, no la fuente de la corrección: toda la lógica de
+      # fechas en backend/src/utils/dateRange.ts usa un offset explícito
+      # (-05:00) y no depende de esto — pero fijarlo igual evita que
+      # cualquier `toLocaleString()`/`Date` sin `timeZone` explícito que se
+      # escriba a futuro caiga silenciosamente en UTC (default de
+      # node:20-alpine, la imagen base de este Dockerfile).
+      TZ: America/Bogota
+      MONGO_URI: mongodb://mongo:27017/mecatos_erp
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-cambia_este_secreto}
+      JWT_EXPIRES_IN: 8h
+      POS_SESSION_SECRET: ${POS_SESSION_SECRET:-cambia_este_secreto_pos}
+      POS_SESSION_EXPIRES_IN: 12h
+      # Origen(es) del frontend permitido(s) para CORS+cookies (obligatorio,
+      # ver README). Ajusta al dominio real donde sirvas admin-frontend.
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5174}
+      # Por defecto NO seguro/lax, porque un docker-compose recién levantado
+      # normalmente no tiene HTTPS todavía. Si pones esto detrás de un
+      # reverse proxy con TLS (Nginx/Caddy/Traefik), sobreescribe estas dos
+      # variables en tu .env: COOKIE_SECURE=true y, si el frontend queda en
+      # un dominio DISTINTO al backend, COOKIE_SAMESITE=none.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      DIAN_PROVIDER: MOCK
+      DIAN_TOPE_CONSUMIDOR_FINAL: 509000
+      # Recuperación de contraseña (admin/manager, ver authController.ts
+      # forgotPassword) — SMTP del correo del negocio. SMTP_USER/SMTP_PASS
+      # no tienen default a propósito: sin ellos, "Olvidé mi contraseña"
+      # responde 500 en vez de fallar silenciosamente. SMTP_PASS debe ser
+      # una contraseña de aplicación de Gmail, no la contraseña normal de
+      # la cuenta. FRONTEND_URL arma el link del correo — ajústalo al
+      # dominio real donde sirvas admin-frontend, igual que CORS_ORIGIN.
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5174}
+      # Fotos de producto (Inventario) — Cloudinary, ver punto 41 de
+      # backend/CLAUDE.md. Sin estas tres, la subida de fotos responde 502
+      # en vez de fallar silenciosamente.
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      # PRUEBA — Resend (API HTTP), alternativa a SMTP mientras se
+      # confirma si el puerto 465 sigue bloqueado en este host. Ver
+      # utils/mailerResend.ts.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-}
+
+  dian-worker:
+    build: ./backend
+    restart: unless-stopped
+    command: ["node", "dist/workers/dianWorker.js"]
+    depends_on:
+      - mongo
+      - redis
+    environment:
+      MONGO_URI: mongodb://mongo:27017/mecatos_erp
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DIAN_PROVIDER: MOCK
+      DIAN_TOPE_CONSUMIDOR_FINAL: 509000
+      RECONCILE_STALE_MINUTES: 2
+      RECONCILE_INTERVAL_MINUTES: 5
+      TZ: America/Bogota
+
+  sheets-worker:
+    build: ./backend
+    restart: unless-stopped
+    command: ["node", "dist/workers/sheetsWorker.js"]
+    depends_on:
+      - redis
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      TZ: America/Bogota
+      # URL del Google Apps Script Web App desplegado (termina en /exec) —
+      # ver docs/GOOGLE_SHEETS_INTEGRATION.md. Sin esto, los jobs de
+      # sincronización quedan encolados pero fallan al intentar entregarse
+      # (reintentan y terminan en 'failed' tras agotar los intentos, sin
+      # afectar al resto del sistema — ver googleSheetsService.ts).
+      GOOGLE_SHEETS_WEBHOOK_URL: ${GOOGLE_SHEETS_WEBHOOK_URL:-}
+
+volumes:
+  mongo_data:
+  redis_data:
+  product_images:
