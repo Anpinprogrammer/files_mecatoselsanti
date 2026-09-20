@@ -61,6 +61,19 @@ generales). El detalle de cada paquete vive en su propio `CLAUDE.md`:
   cajero (hereda todo lo de `admin-frontend/CLAUDE.md`).
 - `print-server/CLAUDE.md` — impresión térmica.
 
+**Documentación para usuarios finales (no es contexto de código):**
+`docs/USER_MANUAL.md` es la **guía operativa oficial** para cajeros, gerentes
+y administradores (login, Caja y ventas, pedidos DiDi, turnos, Dashboard,
+conciliación DiDi de los miércoles, inventario/Carga Masiva y solución de
+problemas frecuentes). Está escrita en español no técnico, con placeholders
+de capturas en `docs/assets/manual/*.png` (las imágenes reales aún hay que
+tomarlas). **Si cambias un nombre de botón, pantalla o flujo que ese manual
+describe, actualízalo en el mismo cambio** — usa los textos exactos de la
+UI, no los nombres internos del código (ej. el botón es "Carga Masiva" y el
+modal "Asignación Masiva de Inventario"; la conciliación DiDi vive en
+`Ventas`, no en Cuentas por Cobrar, que es una pantalla aparte de créditos
+manuales). No lo cargues para trabajo de código: no describe arquitectura.
+
 **A propósito este archivo NO importa esos archivos** (sin `@backend/
 CLAUDE.md` etc.) — la idea de dividir el documento es justo que una sesión
 o subagente que solo toca `print-server/` no cargue de una las 900 líneas
