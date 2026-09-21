@@ -404,7 +404,7 @@ y `.../reset-password`, y el cajero (sede + PIN) por `POST /api/pos/auth/login`.
 
 Lo que se implementó:
 - **Rate limiting** (`express-rate-limit`, memoria) en login admin (10 fallidos/15 min
-  por IP+correo), login por PIN (10 fallidos/15 min por IP **y** 30 por sede — un PIN
+  por IP+correo, más 20 por correo desde cualquier IP — ver el incidente de Render en `backend/CLAUDE.md` 68), login por PIN (10 fallidos/15 min por IP **y** 30 por sede — un PIN
   de 4 dígitos son solo 10.000 combinaciones), forgot-password (5/h por IP y 3/h
   por correo) y reset-password (10/15 min por IP). Responde 429.
 - **`trust proxy`** configurable (`TRUST_PROXY`, por defecto `1` en producción) — sin
