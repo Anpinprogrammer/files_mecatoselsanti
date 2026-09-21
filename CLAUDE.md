@@ -434,7 +434,7 @@ Lo que se implementó:
 | `TRUST_PROXY` | backend | Saltos de proxy (`1` en Render). Por defecto `1` si `NODE_ENV=production`, `false` si no. |
 | `SECURITY_STRICT` | backend | `true` = las advertencias de configuración (secreto corto, cookie sin `Secure`) detienen el arranque. |
 | `CORS_ORIGIN` | backend | Ya existía. Ahora también valida el `Origin` de POST/PUT/PATCH/DELETE y es **obligatoria** en producción. |
-| `PRINT_ALLOWED_ORIGINS` | print-server | Orígenes del frontend que pueden imprimir (por defecto solo `localhost:5174`). **En producción hay que agregar el dominio desplegado**, o la impresión directa se bloquea y el frontend cae al diálogo del navegador. |
+| `PRINT_ALLOWED_ORIGINS` | print-server (`print-server/.env`) | Orígenes del frontend que pueden imprimir (por defecto solo `localhost:5174`). **En producción hay que agregar el dominio desplegado en ese `.env`**, o la impresión directa se bloquea y el frontend cae al diálogo del navegador. |
 
 **Lo que NO se cerró (a propósito o por alcance) — no lo asumas resuelto:**
 - **Los JWT no se revalidan contra la base en cada request**: un usuario desactivado
