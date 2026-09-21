@@ -155,6 +155,7 @@ archivo vive cada número:
 | 61 | Método de pago CARD (Tarjeta/Datáfono) quitado de toda la UI — el negocio solo recibe Efectivo/Nequi/Delivery Apps; el enum del backend lo sigue aceptando por compatibilidad con ventas históricas | `admin-frontend/CLAUDE.md` |
 | 66 | Carga Masiva de inventario — matriz producto x sede (`BulkStockModal.tsx`), `$set` exacto sobre muchos productos a la vez vía `PUT /products/stock/bulk`, extensión multi-producto del punto 60 | `backend/CLAUDE.md` |
 | 67 | `dianWorker.ts` lleva un servidor HTTP mínimo (`GET /health`) para desplegarse como Web Service gratis de Render en vez de un Background Worker de pago — riesgo de suspensión por inactividad aceptado explícitamente | `backend/CLAUDE.md` |
+| 68 | Auditoría de seguridad — rate limiting en logins/recuperación, `trust proxy`, rechazo de operadores NoSQL, chequeo de `Origin`, validación de arranque, print-server aislado a 127.0.0.1 con CORS restringido | *(este archivo)*, `backend/CLAUDE.md`, `print-server/CLAUDE.md` y `admin-frontend/CLAUDE.md` |
 
 ## Stack
 
@@ -389,6 +390,70 @@ proyecto**, pasa por estos helpers (`backend/src/utils/dateRange.ts` o
 `admin-frontend/src/utils/timezone.ts`/`cajero/utils/timezone.ts`) — no
 repitas `new Date().toLocaleString(...)` sin `timeZone`, ni
 `toISOString().slice(0, 10)`, ni `new Date(); .setHours(...)` a mano.
+
+### 68. Auditoría de seguridad (backend + print-server + headers del frontend) — qué existe, qué flags lo controlan, y qué NO se cerró
+
+Resultado de una auditoría de los tres paquetes. El detalle de implementación
+vive en `backend/CLAUDE.md` (punto 68), `print-server/CLAUDE.md` (punto 68) y
+`admin-frontend/CLAUDE.md` (punto 68); acá solo lo que aplica a todo el
+proyecto y **las variables de entorno nuevas**. **Rutas reales** (el pedido de
+la auditoría hablaba de `/api/auth/login`, `/api/auth/pin-login`,
+`/api/auth/forgot-password` — esas rutas no existen): admin/gerente entra por
+`POST /api/admin/auth/login`, recupera con `POST /api/admin/auth/forgot-password`
+y `.../reset-password`, y el cajero (sede + PIN) por `POST /api/pos/auth/login`.
+
+Lo que se implementó:
+- **Rate limiting** (`express-rate-limit`, memoria) en login admin (10 fallidos/15 min
+  por IP+correo), login por PIN (10 fallidos/15 min por IP **y** 30 por sede — un PIN
+  de 4 dígitos son solo 10.000 combinaciones), forgot-password (5/h por IP y 3/h
+  por correo) y reset-password (10/15 min por IP). Responde 429.
+- **`trust proxy`** configurable (`TRUST_PROXY`, por defecto `1` en producción) — sin
+  esto, detrás de Render `req.ip` es el del balanceador y el limitador no distingue clientes.
+- **Anti-inyección NoSQL**: middleware global que responde 400 si body/query/params
+  traen claves `$…` o con punto, más validación con `zod` (tipos `string`) en los
+  endpoints de auth.
+- **Anti-CSRF por `Origin`** en peticiones que modifican datos (necesario porque
+  `SameSite=None` manda las cookies también desde sitios ajenos).
+- **Validación al arrancar** (`config/security.ts`): sin `JWT_SECRET`/`POS_SESSION_SECRET`,
+  con `CORS_ORIGIN="*"` o sin `CORS_ORIGIN` en producción, el backend **no arranca**.
+  Secretos cortos/de ejemplo o `COOKIE_SECURE=false` en producción solo **advierten** —
+  `SECURITY_STRICT=true` los vuelve errores.
+- **print-server**: solo `127.0.0.1`, CORS con lista de orígenes, chequeo de `Host`,
+  validación de la forma del payload, límite de tamaño.
+- **Otros**: JWT verificado con `algorithms: ["HS256"]`, PIN de cajero exigido de 4
+  dígitos también al crear/editar, comparación bcrypt "falsa" en login para no
+  filtrar por tiempo si un correo existe, errores 5xx sin `err.message` en producción,
+  `Cache-Control: no-store` en `/api`, Mongo/Redis del `docker-compose` publicados solo
+  en `127.0.0.1`, headers de seguridad en `admin-frontend/vercel.json`, y
+  `npm audit fix` (sin `--force`) en el backend.
+
+**Variables de entorno nuevas / relevantes:**
+
+| Variable | Dónde | Efecto |
+|---|---|---|
+| `TRUST_PROXY` | backend | Saltos de proxy (`1` en Render). Por defecto `1` si `NODE_ENV=production`, `false` si no. |
+| `SECURITY_STRICT` | backend | `true` = las advertencias de configuración (secreto corto, cookie sin `Secure`) detienen el arranque. |
+| `CORS_ORIGIN` | backend | Ya existía. Ahora también valida el `Origin` de POST/PUT/PATCH/DELETE y es **obligatoria** en producción. |
+| `PRINT_ALLOWED_ORIGINS` | print-server | Orígenes del frontend que pueden imprimir (por defecto solo `localhost:5174`). **En producción hay que agregar el dominio desplegado**, o la impresión directa se bloquea y el frontend cae al diálogo del navegador. |
+
+**Lo que NO se cerró (a propósito o por alcance) — no lo asumas resuelto:**
+- **Los JWT no se revalidan contra la base en cada request**: un usuario desactivado
+  conserva su sesión hasta que expire el token (8 h admin, 12 h cajero); solo `GET /me`
+  comprueba `active`. Cerrarlo cuesta una consulta por request.
+- **Asignación masiva**: `updateProduct`/`updateBranch` hacen `findByIdAndUpdate(id, req.body)`
+  — Mongoose descarta campos que no están en el esquema, pero un gerente puede editar
+  cualquier campo del producto (p. ej. `siigoCode`, `minStock`). Una lista blanca de campos sigue pendiente.
+- **Sin CSP en el frontend** (solo los headers básicos en `vercel.json`): una CSP
+  incorrecta rompería el sitio en producción (dominio de la API, fuentes, Cloudinary,
+  `localhost:4001`) y no se pudo probar contra el despliegue real.
+- **El rate limiter usa memoria**: correcto con una sola instancia (Render gratis);
+  con varias habría que moverlo a Redis (costaría comandos de Upstash, ver punto 4).
+- **`npm audit`**: queda 1 moderada en el backend (`uuid` vía `exceljs`, exige bajar
+  `exceljs` a una versión mayor anterior). `print-server/` **tiene `node_modules/`
+  versionado en su repo** (sin `.gitignore`) — conviene sacarlo del control de versiones.
+- **Secretos de desarrollo**: el `.env` local tiene un `POS_SESSION_SECRET` corto, y el
+  `docker-compose.yml` cae a `cambia_este_secreto*` si no defines los tuyos — nunca lo
+  uses así en un despliegue real.
 
 ## Convenciones de código
 
